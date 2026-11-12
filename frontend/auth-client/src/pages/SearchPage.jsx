@@ -1,217 +1,310 @@
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import WordCard from "../components/WordCard";
-import { searchWord, saveWord, getLibrary } from "../api/words";
+import { saveWord, searchWord } from "../api/words";
+import { useAuth } from "../context/AuthContext";
+import { libraryQueryKey, useLibrary } from "../queries/library";
 
-const TIPS = [
-  "Try searching for words you've recently read but didn't fully understand.",
-  "Save words to your library and review them later.",
-  "Each search checks your library first — no AI credits wasted.",
-  "Build a library of 10 words this week as a personal challenge.",
+const SUGGESTED_WORDS = [
+  "ephemeral",
+  "serendipity",
+  "eloquent",
+  "resilience",
+  "mellifluous",
+  "lucid",
+  "pragmatic",
+  "petrichor",
 ];
 
-const SUGGESTED = [
-  "ephemeral", "serendipity", "loquacious", "melancholy", "ubiquitous", "paradox",
-  "eloquent", "resilience", "ineffable", "mellifluous", "petrichor", "sonder",
-  "limerence", "ebullient", "halcyon", "quintessential", "surreptitious", "idiosyncratic",
-  "perfunctory", "magnanimous", "esoteric", "voracious", "gregarious", "lucid",
-  "fastidious", "vicarious", "nebulous", "cogent", "pragmatic", "luminous",
+const WORD_TRAILS = [
+  { title: "Nature", words: ["apricity", "susurrus", "crepuscular"] },
+  { title: "Feelings", words: ["sonder", "limerence", "hiraeth"] },
+  { title: "Expression", words: ["laconic", "ineffable", "incisive"] },
 ];
 
-const SERIF = "font-['Playfair_Display',Georgia,'Times_New_Roman',serif]";
-const PILL =
-  "cursor-pointer rounded-[22px] border-[0.5px] border-white/[0.07] bg-white/[0.02] px-4 py-[7px] text-[13.5px] text-[#9a9aae] transition-all hover:border-[rgba(124,108,255,0.5)] hover:text-[#b6abff]";
+const WORD_SPOTLIGHTS = [
+  {
+    word: "halcyon",
+    partOfSpeech: "adjective",
+    meaning: "Calm, peaceful, and happy, often describing an idealized time or place.",
+  },
+  {
+    word: "gossamer",
+    partOfSpeech: "adjective",
+    meaning: "Delicate, light, and sheer, like a fine spider's web.",
+  },
+  {
+    word: "penumbra",
+    partOfSpeech: "noun",
+    meaning: "The partially shaded area between full light and complete shadow.",
+  },
+  {
+    word: "ebullient",
+    partOfSpeech: "adjective",
+    meaning: "Cheerful, energetic, and full of enthusiasm.",
+  },
+  {
+    word: "lambent",
+    partOfSpeech: "adjective",
+    meaning: "Glowing softly or moving gently over a surface.",
+  },
+  {
+    word: "quiescent",
+    partOfSpeech: "adjective",
+    meaning: "Quiet, still, or temporarily inactive.",
+  },
+  {
+    word: "resplendent",
+    partOfSpeech: "adjective",
+    meaning: "Impressive in appearance, especially because of rich color or decoration.",
+  },
+];
 
 export default function Search() {
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const { data: library = [] } = useLibrary(user?.id);
   const [query, setQuery] = useState("");
   const [result, setResult] = useState(null);
-  const [correctedFrom, setCorrectedFrom] = useState(null); // original input if AI corrected it
+  const [correctedFrom, setCorrectedFrom] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [savedWords, setSavedWords] = useState([]); // lowercased words already in the library
   const inputRef = useRef(null);
 
-  // forceExact = true → tell the search to skip correction and use the typed term verbatim
   const search = async (overrideQuery, forceExact = false) => {
     const term = (overrideQuery ?? query).trim();
-    if (!term) return;
-    setLoading(true); setError(""); setResult(null); setSaved(false); setCorrectedFrom(null);
+    if (!term || loading) return;
+    setLoading(true);
+    setError("");
+    setResult(null);
+    setSaved(false);
+    setCorrectedFrom(null);
     try {
-      const res = await searchWord(term, forceExact);
-      if (res.data.success) {
-        setResult(res.data);
-        // Only surface a correction when the user didn't force the exact term.
-        setCorrectedFrom(forceExact ? null : res.data.correctedFrom || null);
+      const response = await searchWord(term, forceExact);
+      if (response.data.success) {
+        setResult(response.data);
+        setCorrectedFrom(forceExact ? null : response.data.correctedFrom || null);
       } else {
-        setError(res.data.message || "Something went wrong");
+        setError(response.data.message || "We couldn't find that word.");
       }
-    } catch (err) {
-      setError(err?.response?.data?.message || "Something went wrong");
+    } catch (requestError) {
+      setError(requestError?.response?.data?.message || "Search failed. Please try again.");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const save = async () => {
-    if (!result) return;
+    if (!result || saving || saved) return;
     setSaving(true);
+    setError("");
     try {
-      const res = await saveWord(result.data);
-      if (res.data.success) {
+      const response = await saveWord(result.data);
+      if (response.data.success) {
         setSaved(true);
-        const w = result.data.word?.toLowerCase();
-        if (w) setSavedWords((prev) => (prev.includes(w) ? prev : [...prev, w]));
+        const savedWord = response.data.data;
+        const queryKey = libraryQueryKey(user?.id);
+        const currentLibrary = queryClient.getQueryData(queryKey);
+        if (currentLibrary) {
+          const updatedAt = queryClient.getQueryState(queryKey)?.dataUpdatedAt;
+          queryClient.setQueryData(
+            queryKey,
+            (current) => current.some((item) => item._id === savedWord._id)
+              ? current
+              : [savedWord, ...current],
+            { updatedAt }
+          );
+        } else {
+          await queryClient.invalidateQueries({ queryKey });
+        }
       } else {
-        setError(res.data.message || "Could not save");
+        setError(response.data.message || "Could not save this word.");
       }
-    } catch (err) {
-      setError(err?.response?.data?.message || "Could not save");
+    } catch (requestError) {
+      setError(requestError?.response?.data?.message || "Could not save this word.");
+    } finally {
+      setSaving(false);
     }
-    setSaving(false);
   };
 
   useEffect(() => {
-    setTimeout(() => inputRef.current?.focus(), 100);
-    // Load the user's library so we can hide words they've already saved.
-    (async () => {
-      try {
-        const res = await getLibrary();
-        if (res.data.success) {
-          setSavedWords(res.data.data.map((w) => w.word.toLowerCase()));
-        }
-      } catch (_) {}
-    })();
+    const focusTimer = window.setTimeout(() => inputRef.current?.focus(), 100);
+    return () => window.clearTimeout(focusTimer);
   }, []);
 
-  const tip = useMemo(() => TIPS[Math.floor(Math.random() * TIPS.length)], []);
-
-  // Only suggest words the user hasn't saved yet.
-  const available = SUGGESTED.filter((w) => !savedWords.includes(w));
-
-  const correctedWord = result?.data?.word;
+  const savedWords = useMemo(
+    () => library.map((word) => word.word.toLowerCase()),
+    [library]
+  );
+  const availableWords = useMemo(
+    () => SUGGESTED_WORDS.filter((word) => !savedWords.includes(word)),
+    [savedWords]
+  );
+  const availableTrails = useMemo(
+    () => WORD_TRAILS.map((trail) => ({
+      ...trail,
+      words: trail.words.filter((word) => !savedWords.includes(word)),
+    })).filter((trail) => trail.words.length > 0),
+    [savedWords]
+  );
+  const wordSpotlight = useMemo(() => {
+    return WORD_SPOTLIGHTS.find((candidate) => !savedWords.includes(candidate.word))
+      ?? WORD_SPOTLIGHTS[0];
+  }, [savedWords]);
+  const resultWord = result?.data?.word;
 
   return (
-    <main className="mx-auto w-full max-w-[1080px] flex-1 px-6 pb-16 pt-12">
-      {/* Hero */}
-      <div className="mb-10 text-center">
-        <h1 className={`${SERIF} m-0 mb-3.5 text-[clamp(48px,7vw,84px)] font-extrabold leading-[1.02] tracking-[-0.02em] text-[#ededf2]`}>
-          Discover a new word
-        </h1>
-        <p className="m-0 text-base text-[#9a9aae]">The universe of language is yours to explore.</p>
-      </div>
+    <main className="vt-page-wrap vt-search-page">
+      <header className="vt-page-heading vt-search-heading">
+        <p className="vt-eyebrow">Explore</p>
+        <h1>Find the right word.</h1>
+        <p>Look up a word, understand how it works, and keep it close.</p>
+      </header>
 
-      {/* Search input + button */}
-      <div className="mx-auto max-w-[640px]">
-        <input
-          ref={inputRef}
-          value={query}
-          onChange={e => setQuery(e.target.value)}
-          onKeyDown={e => e.key === "Enter" && search()}
-          placeholder="Type a word…"
-          className={`${SERIF} w-full rounded-[14px] border-[0.5px] border-white/[0.07] bg-white/[0.02] px-[22px] py-[18px] text-center text-[22px] text-[#ededf2] outline-none transition-all placeholder:text-[#6a6a7c] focus:border-[rgba(124,108,255,0.55)] focus:ring-2 focus:ring-[rgba(124,108,255,0.12)]`}
-        />
-        <div className="mt-6 flex justify-center">
-          <button
-            onClick={() => search()}
-            disabled={loading}
-            className={`inline-flex cursor-pointer items-center gap-2.5 rounded-[30px] bg-gradient-to-br from-[#cfc8ff] to-[#a99eff] px-[38px] py-3.5 text-base font-semibold text-[#2b1a6b] shadow-[0_0_0_6px_rgba(124,108,255,0.10),0_14px_36px_-10px_rgba(124,108,255,0.75)] transition-transform hover:-translate-y-px ${
-              loading ? "opacity-70" : ""
-            }`}
-          >
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
-              <circle cx="11" cy="11" r="7" />
-              <path d="m21 21-4.3-4.3" />
-            </svg>
-            {loading ? "Searching…" : "Search"}
-          </button>
-        </div>
+      <form
+        className="vt-search-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          search();
+        }}
+      >
+        <label className="vt-search-field">
+          <span className="vt-sr-only">Search for a word</span>
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none">
+            <circle cx="11" cy="11" r="7" />
+            <path d="m16 16 4 4" />
+          </svg>
+          <input
+            ref={inputRef}
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Try a word you’ve been wondering about"
+            autoComplete="off"
+          />
+          {query && (
+            <button type="button" className="vt-clear-search" onClick={() => setQuery("")}>
+              Clear
+            </button>
+          )}
+        </label>
+        <button className="vt-button-primary vt-search-submit" type="submit" disabled={loading || !query.trim()}>
+          {loading ? "Looking it up…" : "Search"}
+          {!loading && <span aria-hidden="true">→</span>}
+        </button>
+      </form>
 
-        {/* Commonly sought (only words not yet saved) */}
-        {available.length > 0 && (
-          <div className="mt-[30px] flex flex-wrap items-center justify-center gap-2.5">
-            <span className="mr-1 text-[13.5px] text-[#6a6a7c]">Commonly sought:</span>
-            {available.slice(0, 4).map(w => (
-              <button key={w} onClick={() => { setQuery(w); search(w); }} className={PILL}>
-                {w}
+      {!result && !loading && availableWords.length > 0 && (
+        <section className="vt-suggestions" aria-label="Suggested words">
+          <span className="vt-eyebrow">A few words to explore</span>
+          <div className="vt-suggestion-list">
+            {availableWords.slice(0, 6).map((word) => (
+              <button
+                type="button"
+                key={word}
+                onClick={() => {
+                  setQuery(word);
+                  search(word);
+                }}
+              >
+                {word}
+                <span aria-hidden="true">↗</span>
               </button>
             ))}
           </div>
-        )}
-      </div>
-
-      {error && (
-        <div className="mx-auto mt-8 max-w-[760px] rounded-xl border-[0.5px] border-[rgba(255,123,123,0.25)] bg-[rgba(255,123,123,0.1)] px-[18px] py-[13px] text-sm text-[#ff7b7b]">
-          {error}
-        </div>
+        </section>
       )}
+
+      {!result && !loading && availableTrails.length > 0 && (
+        <section className="vt-word-trails" aria-label="Explore words by theme">
+          <p className="vt-eyebrow">Explore by theme</p>
+          <div className="vt-word-trail-list">
+            {availableTrails.map((trail) => (
+              <div className="vt-word-trail" key={trail.title}>
+                <h2>{trail.title}</h2>
+                <div>
+                  {trail.words.map((word) => (
+                    <button
+                      type="button"
+                      key={word}
+                      onClick={() => {
+                        setQuery(word);
+                        search(word);
+                      }}
+                    >
+                      {word}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {!result && !loading && (
+        <section className="vt-word-spotlight" aria-label="Word spotlight">
+          <div>
+            <p className="vt-eyebrow">Word spotlight</p>
+            <div className="vt-word-spotlight-title">
+              <h2>{wordSpotlight.word}</h2>
+              <span>{wordSpotlight.partOfSpeech}</span>
+            </div>
+            <p className="vt-word-spotlight-meaning">{wordSpotlight.meaning}</p>
+          </div>
+          <button
+            type="button"
+            className="vt-button-primary"
+            onClick={() => {
+              setQuery(wordSpotlight.word);
+              search(wordSpotlight.word);
+            }}
+          >
+            Explore this word <span aria-hidden="true">→</span>
+          </button>
+        </section>
+      )}
+
+      {error && <p className="vt-inline-error" role="alert">{error}</p>}
 
       {loading && (
-        <div className="pb-8 pt-16 text-center text-[#9a9aae]">
-          <div className="mb-3.5 inline-block animate-spin text-3xl text-[#b6abff]">⟳</div>
-          <p className="text-sm">Checking your library, then asking AI if needed…</p>
+        <div className="vt-search-loading" role="status" aria-live="polite">
+          <span className="vt-loading-dot" />
+          <span>Checking your library, then looking up the word…</span>
         </div>
       )}
 
-      {/* Spelling correction — "Showing results for X" (Google style) */}
-      {result && !loading && correctedFrom && correctedWord && (
-        <div className="mx-auto mt-10 max-w-[960px] text-[15px] leading-relaxed">
-          <p className="m-0 text-[#ededf2]">
-            Showing results for{" "}
-            <button
-              onClick={() => { setQuery(correctedWord); search(correctedWord, true); }}
-              className={`${SERIF} cursor-pointer border-none bg-transparent p-0 text-[18px] font-bold italic text-[#b6abff] underline decoration-[rgba(182,171,255,0.4)] underline-offset-4 hover:decoration-[#b6abff]`}
-            >
-              {correctedWord}
-            </button>
-          </p>
-          <p className="m-0 mt-1 text-[13.5px] text-[#6a6a7c]">
-            Search instead for{" "}
-            <button
-              onClick={() => { setQuery(correctedFrom); search(correctedFrom, true); }}
-              className="cursor-pointer border-none bg-transparent p-0 text-[13.5px] text-[#9a9aae] underline underline-offset-2 hover:text-[#b6abff]"
-            >
-              {correctedFrom}
-            </button>
-          </p>
+      {result && !loading && correctedFrom && resultWord && (
+        <div className="vt-correction-note">
+          <p>Showing results for <strong>{resultWord}</strong>.</p>
+          <button type="button" onClick={() => {
+            setQuery(correctedFrom);
+            search(correctedFrom, true);
+          }}>
+            Search for “{correctedFrom}” instead
+          </button>
         </div>
       )}
 
       {result && !loading && (
-        <div className={`mx-auto max-w-[960px] ${correctedFrom ? "mt-5" : "mt-12"}`}>
-          <WordCard data={result.data} source={result.source} onSave={save} saving={saving} saved={saved} />
-        </div>
+        <section className="vt-search-result" aria-label={`Definition of ${result.data.word}`}>
+          <WordCard
+            data={result.data}
+            source={result.source}
+            onSave={save}
+            saving={saving}
+            saved={saved}
+          />
+        </section>
       )}
 
-      {/* More words to try (only when idle, and only unsaved words beyond the first 4) */}
-      {!result && !loading && available.length > 4 && (
-        <div className="mx-auto mt-10 max-w-[640px]">
-          <div className="mb-3 text-center text-[11.5px] uppercase tracking-[0.12em] text-[#6a6a7c]">
-            More words to explore
-          </div>
-          <div className="flex flex-wrap justify-center gap-2">
-            {available.slice(4, 10).map(w => (
-              <button key={w} onClick={() => { setQuery(w); search(w); }} className={PILL}>
-                {w}
-              </button>
-            ))}
-          </div>
-        </div>
+      {!result && !loading && (
+        <aside className="vt-search-note">
+          <span className="vt-search-note-mark" aria-hidden="true">i</span>
+          <p>Words you’ve already saved are checked first, so you can revisit them without spending an AI search.</p>
+        </aside>
       )}
-
-      {/* Learning tip */}
-      <div className="mx-auto mt-12 max-w-[720px]">
-        <div className="flex items-start gap-4 rounded-2xl border-[0.5px] border-[rgba(124,108,255,0.22)] bg-[rgba(124,108,255,0.08)] px-6 py-5">
-          <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-[#7c6cff] text-lg">
-            💡
-          </div>
-          <div>
-            <div className="mb-1.5 text-[11.5px] font-bold uppercase tracking-[0.12em] text-[#b6abff]">
-              Learning tip
-            </div>
-            <p className="m-0 text-[15px] leading-[1.65] text-[#9a9aae]">{tip}</p>
-          </div>
-        </div>
-      </div>
     </main>
   );
 }

@@ -1,12 +1,12 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useNavigate } from "react-router-dom";
-import { getQuizAttempts } from "../api/quiz";
 import {
-  getMyEntitlement,
-  getMyCancelRequest,
-  getPaymentHistory,
-} from "../api/subscriptions";
+  useMyCancelRequest,
+  useMyEntitlement,
+  usePaymentHistory,
+  useQuizAttempts,
+} from "../queries/subscriptions";
 const SERIF = "font-['Playfair_Display',Georgia,'Times_New_Roman',serif]";
 
 const scoreColor = (pct) =>
@@ -40,6 +40,10 @@ const fmtMoney = (paise, currency = "INR") => {
 export default function Profile() {
   const { user, updateUser } = useAuth();
   const navigate = useNavigate();
+  const attemptsQuery = useQuizAttempts(user?.id);
+  const entitlementQuery = useMyEntitlement(user?.id);
+  const cancelRequestQuery = useMyCancelRequest(user?.id);
+  const paymentsQuery = usePaymentHistory(user?.id);
 
   // ── Edit state ──
   const [editing, setEditing] = useState(false);
@@ -49,76 +53,26 @@ export default function Profile() {
   const [saveOk, setSaveOk] = useState(false);
 
   // ── Quiz history ──
-  const [attempts, setAttempts] = useState([]);
-  const [loadingHistory, setLoadingHistory] = useState(true);
+  const attempts = attemptsQuery.data?.data || [];
+  const loadingHistory = attemptsQuery.isPending;
   const [expanded, setExpanded] = useState(null);
 
   // ── Plan / usage ──
-  const [plan, setPlan] = useState(null);
-  const [loadingPlan, setLoadingPlan] = useState(true);
-  const [cancelRequest, setCancelRequest] = useState(null);
-  const [loadingCancelRequest, setLoadingCancelRequest] = useState(true);
-  const [cancelRequestError, setCancelRequestError] = useState("");
+  const plan = entitlementQuery.data?.data || null;
+  const cancelRequest = cancelRequestQuery.data?.data || null;
+  const loadingCancelRequest = cancelRequestQuery.isPending;
+  const cancelRequestError = cancelRequestQuery.error?.response?.data?.message ||
+    cancelRequestQuery.error?.message || "";
 
   // ── Payment history ──
-  const [payments, setPayments] = useState([]);
-  const [loadingPayments, setLoadingPayments] = useState(true);
+  const payments = paymentsQuery.data?.data || [];
+  const loadingPayments = paymentsQuery.isPending;
 
   const isGoogle = user?.provider === "google";
 
   useEffect(() => {
     if (user) setForm({ username: user.username || "", email: user.email || "" });
   }, [user]);
-
-  useEffect(() => {
-    (async () => {
-      setLoadingHistory(true);
-      try {
-        const res = await getQuizAttempts();
-        if (res.data.success) setAttempts(res.data.data);
-      } catch (_) {}
-      setLoadingHistory(false);
-    })();
-  }, []);
-
-  useEffect(() => {
-    (async () => {
-      setLoadingPlan(true);
-      try {
-        const res = await getMyEntitlement();
-        if (res.data.success) setPlan(res.data.data);
-      } catch (_) {}
-      setLoadingPlan(false);
-    })();
-  }, []);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await getMyCancelRequest();
-        if (res.data.success) setCancelRequest(res.data.data);
-      } catch (error) {
-        setCancelRequestError(
-          error?.response?.data?.message ||
-            "Cancellation request status could not be loaded."
-        );
-        console.error("Could not load cancellation request:", error);
-      } finally {
-        setLoadingCancelRequest(false);
-      }
-    })();
-  }, []);
-
-  useEffect(() => {
-    (async () => {
-      setLoadingPayments(true);
-      try {
-        const res = await getPaymentHistory();
-        if (res.data.success) setPayments(res.data.data);
-      } catch (_) {}
-      setLoadingPayments(false);
-    })();
-  }, []);
 
   const startEdit = () => {
     setForm({ username: user.username || "", email: user.email || "" });

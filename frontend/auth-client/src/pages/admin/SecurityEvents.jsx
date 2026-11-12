@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { getSecurityEvents } from "../../api/admin";
+import { useAuth } from "../../context/AuthContext";
+import { useSecurityEvents } from "../../queries/admin";
 
 const SERIF = "font-['Playfair_Display',Georgia,'Times_New_Roman',serif]";
 
@@ -18,21 +18,10 @@ const fmtDate = (d) =>
   });
 
 export default function SecurityEvents() {
-  const [events, setEvents] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await getSecurityEvents({ page: 1, limit: 50 });
-        setEvents(res.data.data);
-      } catch (e) {
-        console.error(e);
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, []);
+  const { user } = useAuth();
+  const eventsQuery = useSecurityEvents(user?.id, { page: 1, limit: 50 });
+  const events = eventsQuery.data?.data || [];
+  const loading = eventsQuery.isPending;
 
   if (loading) {
     return (

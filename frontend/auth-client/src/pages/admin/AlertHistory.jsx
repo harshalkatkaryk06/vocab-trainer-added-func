@@ -1,5 +1,6 @@
-import { useState, useEffect } from "react";
-import { getAlerts, resolveAlert } from "../../api/alerts";
+import { useState } from "react";
+import { useAuth } from "../../context/AuthContext";
+import { useAlerts, useResolveAlert } from "../../queries/alerts";
 
 const SERIF = "font-['Playfair_Display',Georgia,'Times_New_Roman',serif]";
 
@@ -29,28 +30,14 @@ const fmtDate = (d) =>
   });
 
 export default function AlertHistory() {
-  const [alerts, setAlerts] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const { user } = useAuth();
+  const alertsQuery = useAlerts(user?.id, { limit: 100 });
+  const resolveAlertMutation = useResolveAlert(user?.id);
+  const alerts = alertsQuery.data?.data || [];
+  const loading = alertsQuery.isPending;
   const [filterCategory, setFilterCategory] = useState("all");
   const [filterSeverity, setFilterSeverity] = useState("all");
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await getAlerts({ limit: 100 });
-        if (res.data.success) setAlerts(res.data.data);
-      } catch (e) {
-        console.error(e);
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, []);
-
-  const resolve = async (id) => {
-    await resolveAlert(id);
-    setAlerts((prev) => prev.filter((a) => a._id !== id));
-  };
+  const resolve = (id) => resolveAlertMutation.mutateAsync(id);
 
   const filtered = alerts.filter((a) => {
     if (filterCategory !== "all" && a.category !== filterCategory) return false;

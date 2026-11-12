@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { getSystemHealth } from "../../api/subscriptions";
+import { useAuth } from "../../context/AuthContext";
+import { useAdminSystemHealth } from "../../queries/subscriptions";
 
 const SERIF = "font-['Playfair_Display',Georgia,'Times_New_Roman',serif]";
 
@@ -27,21 +27,10 @@ const StatCard = ({ label, value, subtitle, colorKey }) => {
 };
 
 export default function AdminSystemHealth() {
-  const [health, setHealth] = useState(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await getSystemHealth();
-        if (res.data.success) setHealth(res.data.data);
-      } catch (e) {
-        console.error(e);
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, []);
+  const { user } = useAuth();
+  const healthQuery = useAdminSystemHealth(user?.id);
+  const health = healthQuery.data?.data || null;
+  const loading = healthQuery.isPending;
 
   if (loading) {
     return (

@@ -1,8 +1,8 @@
-import { useState, useEffect } from "react";
-import {
-  getAllSubscriptions,
-  revokeAccess,
-} from "../../api/subscriptions";
+import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useAuth } from "../../context/AuthContext";
+import { revokeAccess } from "../../api/subscriptions";
+import { subscriptionQueryKeys, useAdminSubscriptions } from "../../queries/subscriptions";
 
 const SERIF = "font-['Playfair_Display',Georgia,'Times_New_Roman',serif]";
 
@@ -33,25 +33,15 @@ const fmtDate = (d) =>
   });
 
 export default function AdminSubscriptions() {
-  const [subs, setSubs] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const subsQuery = useAdminSubscriptions(user?.id);
+  const subs = subsQuery.data?.data || [];
+  const loading = subsQuery.isPending;
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterType, setFilterType] = useState("all");
   const [revoking, setRevoking] = useState(null);
   const [msg, setMsg] = useState(null);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await getAllSubscriptions();
-        if (res.data.success) setSubs(res.data.data);
-      } catch (e) {
-        console.error(e);
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, []);
 
   const filtered = subs.filter((s) => {
     if (filterStatus !== "all" && s.status !== filterStatus) return false;
@@ -66,11 +56,20 @@ export default function AdminSubscriptions() {
       const res = await revokeAccess(id, reason || "Revoked by admin");
       if (res.data.success) {
         setMsg({ type: "ok", text: "Subscription revoked." });
-        setSubs((prev) =>
-          prev.map((s) =>
-            s._id === id ? { ...s, status: "revoked" } : s
-          )
+        queryClient.setQueryData(
+          subscriptionQueryKeys.adminSubscriptions(user?.id, {}),
+          (current) => ({
+            ...current,
+            data: current.data.map((subscription) =>
+              subscription._id === id
+                ? { ...subscription, status: "revoked" }
+                : subscription
+            ),
+          })
         );
+        await queryClient.invalidateQueries({
+          queryKey: subscriptionQueryKeys.systemHealth(user?.id),
+        });
       } else {
         setMsg({ type: "err", text: res.data.message || "Failed to revoke." });
       }

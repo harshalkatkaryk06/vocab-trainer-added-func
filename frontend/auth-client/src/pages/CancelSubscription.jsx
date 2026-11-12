@@ -1,9 +1,13 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
+import { submitCancelRequest } from "../api/subscriptions";
 import {
-  cancelPreview,
-  getMyCancelRequest,
-  submitCancelRequest,
-} from "../api/subscriptions";
+  subscriptionQueryKeys,
+  useCancelPreview,
+  useMyCancelRequest,
+} from "../queries/subscriptions";
 
 const SERIF = "font-['Playfair_Display',Georgia,'Times_New_Roman',serif]";
 const REASONS = [
@@ -26,62 +30,30 @@ const fmtMoney = (paise, currency = "INR") =>
   `${currency} ${(Number(paise || 0) / 100).toFixed(2)}`;
 
 export default function CancelSubscription() {
-  const [preview, setPreview] = useState(null);
-  const [request, setRequest] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const previewQuery = useCancelPreview(user?.id);
+  const requestQuery = useMyCancelRequest(user?.id);
+  const preview = previewQuery.data?.data || null;
+  const request = requestQuery.data?.data || null;
+  const loading = previewQuery.isPending || requestQuery.isPending;
+  const loadError =
+    requestQuery.error?.response?.data?.message ||
+    requestQuery.error?.message ||
+    previewQuery.error?.response?.data?.message ||
+    previewQuery.error?.message ||
+    "";
+  const [actionError, setActionError] = useState("");
+  const error = actionError || loadError;
   const [submitting, setSubmitting] = useState(false);
   const [reason, setReason] = useState("");
   const [details, setDetails] = useState("");
   const [agreed, setAgreed] = useState(false);
 
-  const loadData = async () => {
-    setLoading(true);
-    setError("");
-    const [previewResult, requestResult] = await Promise.allSettled([
-      cancelPreview(),
-      getMyCancelRequest(),
-    ]);
-
-    if (requestResult.status === "fulfilled" && requestResult.value.data.success) {
-      setRequest(requestResult.value.data.data);
-    } else if (requestResult.status === "rejected") {
-      setError(
-        requestResult.reason?.response?.data?.message ||
-          "Could not verify whether a cancellation request is already open."
-      );
-      console.error("Could not load cancellation request:", requestResult.reason);
-    } else {
-      setError("Could not verify whether a cancellation request is already open.");
-    }
-
-    if (previewResult.status === "fulfilled" && previewResult.value.data.success) {
-      setPreview(previewResult.value.data.data);
-    } else if (previewResult.status === "rejected") {
-      setPreview(null);
-      setError(
-        previewResult.reason?.response?.data?.message ||
-          "Failed to load your subscription."
-      );
-    } else {
-      setPreview(null);
-      setError("Failed to load your subscription.");
-    }
-    setLoading(false);
-  };
-
-  useEffect(() => {
-    const initialize = async () => {
-      await Promise.resolve();
-      await loadData();
-    };
-    initialize();
-  }, []);
-
   const handleSubmit = async () => {
     if (!agreed || !reason || submitting) return;
     setSubmitting(true);
-    setError("");
+    setActionError("");
     try {
       const response = await submitCancelRequest({
         reason,
@@ -90,20 +62,30 @@ export default function CancelSubscription() {
         acceptedTerms: true,
       });
       if (response.data.success) {
-        setRequest(response.data.data);
+        queryClient.setQueryData(
+          subscriptionQueryKeys.cancelRequest(user?.id),
+          { success: true, data: response.data.data }
+        );
       } else {
-        setError(response.data.message || "Could not submit your request.");
+        setActionError(response.data.message || "Could not submit your request.");
       }
     } catch (submitError) {
       if (submitError.response?.status === 409) {
         setAgreed(false);
-        await loadData();
-        setError(
+        await Promise.all([
+          queryClient.invalidateQueries({
+            queryKey: subscriptionQueryKeys.cancelPreview(user?.id),
+          }),
+          queryClient.invalidateQueries({
+            queryKey: subscriptionQueryKeys.cancelRequest(user?.id),
+          }),
+        ]);
+        setActionError(
           submitError.response.data.message ||
             "The refund estimate changed or a request is already open. Review the latest information."
         );
       } else {
-        setError(
+        setActionError(
           submitError.response?.data?.message ||
             "Could not submit your cancellation request."
         );
@@ -134,12 +116,12 @@ export default function CancelSubscription() {
             available in the dedicated Cancellation &amp; refund status section
             on your profile.
           </p>
-          <button
-            onClick={() => (window.location.href = "/profile")}
-            className="mt-6 rounded-[12px] bg-[#7c6cff] px-5 py-3 text-sm font-semibold text-white hover:bg-[#5b4fd6]"
+          <Link
+            to="/profile"
+            className="mt-6 inline-block rounded-[12px] bg-[#7c6cff] px-5 py-3 text-sm font-semibold text-white hover:bg-[#5b4fd6]"
           >
             Go to profile
-          </button>
+          </Link>
         </div>
       </div>
     );
@@ -154,7 +136,10 @@ export default function CancelSubscription() {
         </h2>
         <p className="text-[#9a9aae]">{error}</p>
         <button
-          onClick={loadData}
+          onClick={() => {
+            previewQuery.refetch();
+            requestQuery.refetch();
+          }}
           className="mt-6 rounded-[12px] bg-[#7c6cff] px-5 py-3 text-sm font-semibold text-white"
         >
           Retry
@@ -338,12 +323,12 @@ export default function CancelSubscription() {
           </label>
 
           <div className="flex flex-wrap gap-3">
-            <button
-              onClick={() => (window.location.href = "/profile")}
+            <Link
+              to="/profile"
               className="rounded-[12px] border-[0.5px] border-white/[0.07] px-5 py-3 text-sm font-semibold text-[#9a9aae] hover:bg-white/[0.03] hover:text-[#b6abff]"
             >
               Keep my plan
-            </button>
+            </Link>
             <button
               onClick={handleSubmit}
               disabled={submitting || !agreed || !reason}

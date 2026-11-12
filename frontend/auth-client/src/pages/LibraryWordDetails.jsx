@@ -1,30 +1,38 @@
 import { useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import SpeakButton from "../components/SpeakButton";
 import ConfirmDeleteModal from "../components/ConfirmDeleteModal";
 import { deleteWord } from "../api/words";
-
-const SERIF =
-  "font-['Playfair_Display',Georgia,'Times_New_Roman',serif]";
+import { useAuth } from "../context/AuthContext";
+import { libraryQueryKey } from "../queries/library";
 
 export default function LibraryWordDetails() {
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
   const navigate = useNavigate();
   const location = useLocation();
-
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleting, setDeleting] = useState(false);
-
+  const [error, setError] = useState("");
   const word = location.state?.word;
 
   const handleDelete = async () => {
+    if (!word || deleting) return;
+    setDeleting(true);
+    setError("");
     try {
-      setDeleting(true);
-
-      await deleteWord(word._id);
-
+      const response = await deleteWord(word._id);
+      if (!response.data.success) {
+        setError(response.data.message || "Could not remove this word.");
+        return;
+      }
+      queryClient.setQueryData(libraryQueryKey(user?.id), (current) =>
+        current?.filter((item) => item._id !== word._id)
+      );
       navigate("/library");
-    } catch (error) {
-      console.error("Delete Word Error:", error);
+    } catch (requestError) {
+      setError(requestError?.response?.data?.message || "Could not remove this word.");
     } finally {
       setDeleting(false);
       setShowDeleteModal(false);
@@ -33,140 +41,69 @@ export default function LibraryWordDetails() {
 
   if (!word) {
     return (
-      <div className="p-10 text-center text-white">
-        Word not found
-      </div>
+      <main className="vt-page-wrap vt-detail-page">
+        <Link to="/library" className="vt-link">← Back to your library</Link>
+        <section className="vt-library-empty">
+          <h1>Word not available</h1>
+          <p>Return to your library and open a saved word from there.</p>
+        </section>
+      </main>
     );
   }
 
   return (
-    <>
-      <main className="mx-auto max-w-4xl px-6 py-12">
-        <button
-          onClick={() => navigate(-1)}
-          className="mb-8 text-sm text-[#9a9aae] transition-colors hover:text-white"
-        >
-          ← Back
-        </button>
+    <main className="vt-page-wrap vt-detail-page">
+      <button type="button" className="vt-detail-back" onClick={() => navigate(-1)}>
+        ← Back to your library
+      </button>
 
-        <div className="rounded-2xl border border-white/10 bg-[#0f0f18] p-8">
-          {/* Header */}
-          <div className="flex flex-wrap items-start justify-between gap-5">
-            <div>
-              <h1
-                className={`${SERIF} bg-gradient-to-r from-[#f3c969] to-[#df9a31] bg-clip-text text-5xl font-bold text-transparent`}
-              >
-                {word.word}
-              </h1>
-
-              <div className="mt-4 flex flex-wrap gap-3">
-                {word.type && (
-                  <span className="rounded-lg bg-[#171722] px-3 py-1 text-sm text-[#9a9aae]">
-                    {word.type}
-                  </span>
-                )}
-
-                {word.partOfSpeech && (
-                  <span className="rounded-lg bg-[#171722] px-3 py-1 text-sm text-[#9a9aae]">
-                    {word.partOfSpeech}
-                  </span>
-                )}
-              </div>
+      <article className="vt-detail-card">
+        <header className="vt-detail-header">
+          <div className="vt-detail-heading">
+            <p className="vt-eyebrow">Saved word</p>
+            <h1 className="vt-word-serif">{word.word}</h1>
+            <div className="vt-library-word-meta">
+              {word.type && <span className="vt-word-pos">{word.type}</span>}
+              {word.partOfSpeech && <span className="vt-word-pos">{word.partOfSpeech}</span>}
+              {word.pronunciationReadable && <span>/{word.pronunciationReadable}/</span>}
             </div>
-
-            {/* Actions */}
-            <div className="flex items-center gap-3">
-              <SpeakButton word={word.word} />
-
-              <button
-                onClick={() => setShowDeleteModal(true)}
-                disabled={deleting}
-                className="flex items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-2 text-sm text-red-400 transition-all hover:bg-red-500/20 disabled:opacity-50"
-              >
-                <svg
-                  width="15"
-                  height="15"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M3 6h18" />
-                  <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-                  <path d="M10 11v6" />
-                  <path d="M14 11v6" />
-                  <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
-                </svg>
-
-                Delete
-              </button>
-            </div>
+            {word.pronunciation && <p className="vt-detail-ipa">{word.pronunciation}</p>}
           </div>
-
-          {/* Definition */}
-          <div className="mt-8">
-            <h3 className="mb-2 text-lg font-semibold text-white">
-              Definition
-            </h3>
-
-            <p className="leading-relaxed text-[#c9c9d6]">
-              {word.primaryDefinition}
-            </p>
+          <div className="vt-detail-actions">
+            <SpeakButton word={word.word} />
+            <button type="button" className="vt-detail-delete" onClick={() => setShowDeleteModal(true)}>
+              Remove word
+            </button>
           </div>
+        </header>
 
-          {/* Pronunciation */}
-          {(word.pronunciation || word.pronunciationReadable) && (
-            <div className="mt-8">
-              <h3 className="mb-2 text-lg font-semibold text-white">
-                Pronunciation
-              </h3>
+        {error && <p className="vt-inline-error" role="alert">{error}</p>}
 
-              {word.pronunciation && (
-                <p className="text-[#c9c9d6]">
-                  {word.pronunciation}
-                </p>
-              )}
+        <section className="vt-detail-section">
+          <p className="vt-eyebrow">Meaning</p>
+          <p className="vt-detail-definition">{word.primaryDefinition}</p>
+        </section>
 
-              {word.pronunciationReadable && (
-                <p className="mt-1 text-[#9a9aae]">
-                  {word.pronunciationReadable}
-                </p>
-              )}
+        {word.examples?.length > 0 && (
+          <section className="vt-detail-section">
+            <p className="vt-eyebrow">In context</p>
+            <div className="vt-detail-examples">
+              {word.examples.map((example, index) => (
+                <blockquote key={index}>{example}</blockquote>
+              ))}
             </div>
-          )}
-
-          {/* Examples */}
-          {word.examples?.length > 0 && (
-            <div className="mt-8">
-              <h3 className="mb-3 text-lg font-semibold text-white">
-                Examples
-              </h3>
-
-              <ul className="space-y-3">
-                {word.examples.map((ex, index) => (
-                  <li
-                    key={index}
-                    className="rounded-lg border border-white/5 bg-[#171722] p-4 text-[#c9c9d6]"
-                  >
-                    {ex}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
-      </main>
+          </section>
+        )}
+      </article>
 
       <ConfirmDeleteModal
         isOpen={showDeleteModal}
+        title="Remove saved word?"
+        message={`“${word.word}” will be removed from your library.`}
         loading={deleting}
-        title="Delete Word"
-        message={`Are you sure you want to delete "${word.word}" from your library? This action cannot be undone.`}
-        onCancel={() => setShowDeleteModal(false)}
+        onClose={() => setShowDeleteModal(false)}
         onConfirm={handleDelete}
       />
-    </>
+    </main>
   );
 }

@@ -1,9 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
-import {
-  getAllPlansAdmin,
-  savePlan,
-} from "../../api/subscriptions";
+import { useQueryClient } from "@tanstack/react-query";
+import { useAuth } from "../../context/AuthContext";
+import { savePlan } from "../../api/subscriptions";
+import { subscriptionQueryKeys, useAdminPlans } from "../../queries/subscriptions";
 
 const SERIF = "font-['Playfair_Display',Georgia,'Times_New_Roman',serif]";
 
@@ -19,23 +19,13 @@ const fmtDate = (d) =>
   });
 
 export default function AdminPlans() {
-  const [plans, setPlans] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const plansQuery = useAdminPlans(user?.id);
+  const plans = plansQuery.data?.data || [];
+  const loading = plansQuery.isPending;
   const [saving, setSaving] = useState(null);
   const [msg, setMsg] = useState(null);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await getAllPlansAdmin();
-        if (res.data.success) setPlans(res.data.data);
-      } catch (e) {
-        console.error(e);
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, []);
 
   const togglePlan = async (plan) => {
     setSaving(plan._id);
@@ -58,11 +48,18 @@ export default function AdminPlans() {
           type: "ok",
           text: `Plan ${!plan.isActive ? "activated" : "deactivated"}.`,
         });
-        setPlans((prev) =>
-          prev.map((p) =>
-            p._id === plan._id ? { ...p, isActive: !p.isActive } : p
-          )
+        queryClient.setQueryData(
+          subscriptionQueryKeys.adminPlans(user?.id),
+          (current) => ({
+            ...current,
+            data: current.data.map((p) =>
+              p._id === plan._id ? { ...p, isActive: !p.isActive } : p
+            ),
+          })
         );
+        await queryClient.invalidateQueries({
+          queryKey: subscriptionQueryKeys.plans,
+        });
       } else {
         setMsg({ type: "err", text: res.data.message || "Failed to update plan." });
       }

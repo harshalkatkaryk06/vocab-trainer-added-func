@@ -1,14 +1,14 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import ErrorBoundary from "../components/ErrorBoundary";
 import {
-  getPlans,
-  getMyEntitlement,
   grantAccess,
   createOrder,
   verifyPayment,
 } from "../api/subscriptions";
+import { subscriptionQueryKeys, useMyEntitlement, usePlanCatalog } from "../queries/subscriptions";
 
 const SERIF = "font-['Playfair_Display',Georgia,'Times_New_Roman',serif]";
 
@@ -29,13 +29,22 @@ const loadRazorpay = () =>
 
 export default function PlansPage() {
   const { user } = useAuth();
-  const [plans, setPlans] = useState([]);
-  const [entitlement, setEntitlement] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
+  const plansQuery = usePlanCatalog();
+  const entitlementQuery = useMyEntitlement(user?.id);
+  const plans = plansQuery.data?.data || [];
+  const entitlement = entitlementQuery.data?.data || null;
+  const loading = plansQuery.isPending || entitlementQuery.isPending;
   const [granting, setGranting] = useState(false);
   const [grantEmail, setGrantEmail] = useState("");
   const [grantDays, setGrantDays] = useState("30");
   const [msg, setMsg] = useState(null);
+  const loadError =
+    plansQuery.error?.response?.data?.message ||
+    plansQuery.error?.message ||
+    entitlementQuery.error?.response?.data?.message ||
+    entitlementQuery.error?.message ||
+    "";
   // 1. Store only a true/false flag. Never store window.Razorpay itself in state:
   //    it is a function, and React treats a function passed to a state setter
   //    as an "updater" and calls it, which makes Razorpay throw "Invalid options".
@@ -43,16 +52,6 @@ export default function PlansPage() {
   const [paying, setPaying] = useState(null);
 
   useEffect(() => {
-    (async () => {
-      try {
-        const [pRes, eRes] = await Promise.all([getPlans(), getMyEntitlement()]);
-        if (pRes.data.success) setPlans(pRes.data.data);
-        if (eRes.data.success) setEntitlement(eRes.data.data);
-      } catch (_) {}
-      setLoading(false);
-    })();
-
-    // 2. Load checkout.js and only remember whether it loaded successfully.
     loadRazorpay().then((rz) => {
       const loadedOk = rz ? true : false;
       setGatewayReady(loadedOk);
@@ -71,8 +70,15 @@ export default function PlansPage() {
       if (res.data.success) {
         setMsg({ type: "ok", text: `Paid access granted to ${grantEmail.trim()}.` });
         setGrantEmail("");
-        const eRes = await getMyEntitlement();
-        if (eRes.data.success) setEntitlement(eRes.data.data);
+        await queryClient.invalidateQueries({
+          queryKey: subscriptionQueryKeys.entitlement(user?.id),
+        });
+        await queryClient.invalidateQueries({
+          queryKey: subscriptionQueryKeys.systemHealth(user?.id),
+        });
+        await queryClient.invalidateQueries({
+          queryKey: subscriptionQueryKeys.adminSubscriptions(user?.id),
+        });
       } else {
         setMsg({ type: "err", text: res.data.message || "Could not grant access." });
       }
@@ -123,8 +129,12 @@ export default function PlansPage() {
             });
             if (verifyRes.data.success) {
               setMsg({ type: "ok", text: "Payment successful! Subscription activated." });
-              const eRes = await getMyEntitlement();
-              if (eRes.data.success) setEntitlement(eRes.data.data);
+              await queryClient.invalidateQueries({
+                queryKey: subscriptionQueryKeys.entitlement(user?.id),
+              });
+              await queryClient.invalidateQueries({
+                queryKey: subscriptionQueryKeys.paymentHistory(user?.id),
+              });
             } else {
               setMsg({ type: "err", text: verifyRes.data.message || "Payment verification failed." });
             }
@@ -169,7 +179,13 @@ export default function PlansPage() {
   return (
     <ErrorBoundary>
       <main className="mx-auto w-full max-w-[1080px] flex-1 px-6 py-10 md:py-12">
-      <div className="space-y-8">
+      <div className="vt-plan-content">
+      {loadError && (
+        <div className="vt-plan-error" role="alert">
+          <span>{loadError}</span>
+          <button type="button" onClick={() => window.location.reload()}>Reload</button>
+        </div>
+      )}
       {/* Header */}
       <div>
         <h1 className={`${SERIF} m-0 text-[34px] font-bold tracking-[-0.01em] text-[#ededf2]`}>
@@ -181,14 +197,14 @@ export default function PlansPage() {
       </div>
 
       {/* Current plan card */}
-      <div className="rounded-[22px] border-[0.5px] border-white/[0.07] bg-[#0f0f18] p-8 shadow-[0_24px_60px_-28px_rgba(0,0,0,0.7)]">
-        <h2 className={`${SERIF} mb-5 text-[24px] font-bold text-[#ededf2]`}>
+      <div className="rounded-[22px] border-[0.5px] border-white/[0.07] bg-[#0f0f18] p-6 shadow-[0_24px_60px_-28px_rgba(0,0,0,0.7)]">
+        <h2 className={`${SERIF} mb-3 text-[24px] font-bold text-[#ededf2]`}>
           Your current plan
         </h2>
-        <div className="flex flex-col md:flex-row md:items-center gap-6">
+        <div className="flex flex-col md:flex-row md:items-center gap-4">
           <div className="flex items-center gap-4">
-            <div className="flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-full border-[0.5px] border-white/[0.07] bg-gradient-to-br from-[#7c6cff] to-[#5b4fd6]">
-              <span className="text-xl">{currentPlan?.name === "paid" ? "💎" : "🆓"}</span>
+            <div className="vt-plan-mark">
+              {currentPlan?.name === "paid" ? "PRO" : "FREE"}
             </div>
             <div>
               <div className={`${SERIF} text-[20px] font-bold text-[#ededf2]`}>
@@ -233,7 +249,7 @@ export default function PlansPage() {
           return (
             <div
               key={p._id}
-              className={`rounded-[20px] border-[0.5px] p-7 flex flex-col transition-all ${
+              className={`rounded-[20px] border-[0.5px] p-5 flex flex-col transition-all ${
                 active
                   ? "border-[#7c6cff]/50 bg-[#0f0f18]/50 shadow-[0_0_0_1px_rgba(124,108,255,0.15)]"
                   : "border-white/[0.07] bg-[#0f0f18] hover:border-[rgba(124,108,255,0.28)] hover:-translate-y-1"
@@ -247,11 +263,11 @@ export default function PlansPage() {
               <div className={`${SERIF} mb-2 text-[22px] font-bold text-[#ededf2]`}>
                 {p.displayName}
               </div>
-              <div className="mb-4 text-[13px] text-[#9a9aae] leading-relaxed">
+              <div className="mb-2 text-[13px] text-[#9a9aae] leading-relaxed">
                 {p.description || ""}
               </div>
 
-              <div className="mb-6">
+              <div className="mb-4">
                 <div className="flex items-baseline gap-1">
                   <span className={`${SERIF} text-[40px] font-extrabold text-[#ededf2]`}>
                     {p.price === 0 ? "Free" : `$${p.price}`}
@@ -263,7 +279,7 @@ export default function PlansPage() {
                 </div>
               </div>
 
-              <div className="space-y-2 mb-6">
+              <div className="space-y-2 mb-4">
                 <div className="flex items-start gap-2">
                   <span className="text-[11px] text-[#5ee08a]">✓</span>
                   <span className="text-[12.5px] text-[#9a9aae]">
@@ -307,20 +323,17 @@ export default function PlansPage() {
         })}
       </div>
 
-      <a
-        href="/subscription/cancel"
-        className="block text-center text-[11px] text-[#7c6cff] underline underline-offset-4 hover:text-[#b6abff] mt-6"
+      <Link
+        to="/subscription/cancel"
+        className="block text-center text-[11px] text-[#7c6cff] underline underline-offset-4 hover:text-[#b6abff]"
       >
         Cancellation &amp; refund policy
-      </a>
+      </Link>
 
       {user?.role === "admin" || user?.role === "super_admin" ? (
-        <>
-          {/* Admin: grant manual access */}
-          <div className="rounded-[22px] border-[0.5px] border-white/[0.07] bg-[#0f0f18] p-8 shadow-[0_24px_60px_-28px_rgba(0,0,0,0.7)]">
-            <h2 className={`${SERIF} mb-5 text-[24px] font-bold text-[#ededf2]`}>
-              Grant paid access (Admin)
-            </h2>
+        <details className="vt-plan-admin-tools">
+          <summary>Grant paid access (Admin)</summary>
+          <div className="vt-plan-admin-content">
             <p className="mb-5 text-[#9a9aae]">
               Manually grant paid access to a user by email. The email must belong to a
               verified user.
@@ -370,7 +383,7 @@ export default function PlansPage() {
               </div>
             )}
           </div>
-        </>
+        </details>
       ) : null}
       </div>
       </main>

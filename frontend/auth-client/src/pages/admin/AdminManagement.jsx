@@ -1,27 +1,21 @@
-import { useState, useEffect } from "react";
-import { getAdmins, createAdmin, revokeAdmin } from "../../api/admin";
+import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { createAdmin, revokeAdmin } from "../../api/admin";
+import { useAuth } from "../../context/AuthContext";
+import { adminQueryKeys, useAdmins } from "../../queries/admin";
+import { subscriptionQueryKeys } from "../../queries/subscriptions";
 
 const SERIF = "font-['Playfair_Display',Georgia,'Times_New_Roman',serif]";
 
 export default function AdminManagement() {
-  const [admins, setAdmins] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const adminsQuery = useAdmins(user?.id);
+  const admins = adminsQuery.data?.data || [];
+  const loading = adminsQuery.isPending;
   const [creating, setCreating] = useState(false);
   const [newEmail, setNewEmail] = useState("");
   const [revoking, setRevoking] = useState(null);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await getAdmins();
-        setAdmins(res.data.data);
-      } catch (e) {
-        console.error(e);
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, []);
 
   const handleCreate = async (e) => {
     e.preventDefault();
@@ -30,8 +24,13 @@ export default function AdminManagement() {
     try {
       await createAdmin(newEmail.trim());
       setNewEmail("");
-      const res = await getAdmins();
-      setAdmins(res.data.data);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: adminQueryKeys.admins(user?.id) }),
+        queryClient.invalidateQueries({ queryKey: adminQueryKeys.users(user?.id) }),
+        queryClient.invalidateQueries({ queryKey: adminQueryKeys.auditLogs(user?.id) }),
+        queryClient.invalidateQueries({ queryKey: adminQueryKeys.securityEvents(user?.id) }),
+        queryClient.invalidateQueries({ queryKey: subscriptionQueryKeys.systemHealth(user?.id) }),
+      ]);
     } catch (e) {
       alert(e?.response?.data?.message || "Failed to create admin");
     } finally {
@@ -44,7 +43,13 @@ export default function AdminManagement() {
     setRevoking(id);
     try {
       await revokeAdmin(id);
-      setAdmins((prev) => prev.filter((a) => a._id !== id));
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: adminQueryKeys.admins(user?.id) }),
+        queryClient.invalidateQueries({ queryKey: adminQueryKeys.users(user?.id) }),
+        queryClient.invalidateQueries({ queryKey: adminQueryKeys.auditLogs(user?.id) }),
+        queryClient.invalidateQueries({ queryKey: adminQueryKeys.securityEvents(user?.id) }),
+        queryClient.invalidateQueries({ queryKey: subscriptionQueryKeys.systemHealth(user?.id) }),
+      ]);
     } catch (e) {
       alert(e?.response?.data?.message || "Failed to revoke admin");
     } finally {

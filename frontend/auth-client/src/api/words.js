@@ -6,8 +6,8 @@ export const searchWord = (word) =>
 export const saveWord = (data) =>
   api.post("/words/save", data);
 
-export const getLibrary = () =>
-  api.get("/words/library");
+export const getLibrary = (config) =>
+  api.get("/words/library", config);
 
 export const deleteWord = (id) =>
   api.delete(`/words/${id}`);

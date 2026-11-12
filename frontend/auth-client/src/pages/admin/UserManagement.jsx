@@ -1,5 +1,9 @@
-import { useState, useEffect } from "react";
-import { getAdminUsers, changeUserRole } from "../../api/admin";
+import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { changeUserRole } from "../../api/admin";
+import { useAuth } from "../../context/AuthContext";
+import { adminQueryKeys, useAdminUsers } from "../../queries/admin";
+import { subscriptionQueryKeys } from "../../queries/subscriptions";
 
 const SERIF = "font-['Playfair_Display',Georgia,'Times_New_Roman',serif]";
 
@@ -15,29 +19,28 @@ const roleBadge = (role) => {
 };
 
 export default function UserManagement() {
-  const [users, setUsers] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const usersQuery = useAdminUsers(user?.id);
+  const users = usersQuery.data?.data || [];
+  const loading = usersQuery.isPending;
   const [saving, setSaving] = useState(null);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await getAdminUsers();
-        setUsers(res.data.data);
-      } catch (e) {
-        console.error(e);
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, []);
 
   const changeRole = async (id, currentRole) => {
     const newRole = currentRole === "admin" ? "user" : "admin";
     setSaving(id);
     try {
       await changeUserRole(id, newRole);
-      setUsers((prev) => prev.map((u) => (u._id === id ? { ...u, role: newRole } : u)));
+      queryClient.setQueryData(adminQueryKeys.users(user?.id), (current) => ({
+        ...current,
+        data: current.data.map((u) => (u._id === id ? { ...u, role: newRole } : u)),
+      }));
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: adminQueryKeys.admins(user?.id) }),
+        queryClient.invalidateQueries({ queryKey: adminQueryKeys.auditLogs(user?.id) }),
+        queryClient.invalidateQueries({ queryKey: adminQueryKeys.securityEvents(user?.id) }),
+        queryClient.invalidateQueries({ queryKey: subscriptionQueryKeys.systemHealth(user?.id) }),
+      ]);
     } catch (e) {
       console.error(e);
       alert(e?.response?.data?.message || "Failed to change role");

@@ -1,4 +1,5 @@
 import { createContext, useState, useEffect, useContext, useRef } from "react";
+import { queryClient } from "../queryClient";
 import {
   loginUser,
   registerUser,
@@ -16,6 +17,12 @@ import {
 
 export const AuthContext = createContext(null);
 export const useAuth = () => useContext(AuthContext);
+
+const normalizeUser = (user) => {
+  if (!user || typeof user !== "object") return null;
+  const id = user.id ?? user._id;
+  return id == null ? user : { ...user, id: String(id) };
+};
 
 // Decode a JWT's `exp` (seconds) → ms, without any library.
 const getExpiryMs = (token) => {
@@ -69,6 +76,7 @@ export const AuthProvider = ({ children }) => {
     setTokenRefreshedHandler((token) => scheduleProactiveRefresh(token));
     setAuthFailureHandler(() => {
       clearRefreshTimer();
+      queryClient.clear();
       setAccessToken(null);
       setUser(null);
     });
@@ -80,7 +88,7 @@ export const AuthProvider = ({ children }) => {
       try {
         await refreshAccessToken(); // sets token + schedules via onTokenRefreshed
         const me = await getMe();
-        if (me.data.success) setUser(me.data.user);
+        if (me.data.success) setUser(normalizeUser(me.data.user));
       } catch (_) {
         setAccessToken(null);
         setUser(null);
@@ -98,9 +106,10 @@ export const AuthProvider = ({ children }) => {
 
   const login = async (email, password, remember = true) => {
     const res = await loginUser({ email, password, remember });
+    queryClient.clear();
     setAccessToken(res.data.accessToken);
     scheduleProactiveRefresh(res.data.accessToken);
-    setUser(res.data.user);
+    setUser(normalizeUser(res.data.user));
     return res.data;
   };
 
@@ -111,15 +120,16 @@ export const AuthProvider = ({ children }) => {
 
   const loginWithGoogle = async (idToken) => {
     const res = await googleLogin(idToken);
+    queryClient.clear();
     setAccessToken(res.data.accessToken);
     scheduleProactiveRefresh(res.data.accessToken);
-    setUser(res.data.user);
+    setUser(normalizeUser(res.data.user));
     return res.data;
   };
 
   const updateUser = async (data) => {
     const res = await updateMe(data);
-    if (res.data.success) setUser(res.data.user);
+    if (res.data.success) setUser(normalizeUser(res.data.user));
     return res.data;
   };
 
@@ -129,6 +139,7 @@ export const AuthProvider = ({ children }) => {
     } catch (_) {
     } finally {
       clearRefreshTimer();
+      queryClient.clear();
       setAccessToken(null);
       setUser(null);
     }

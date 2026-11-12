@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { getAlerts, resolveAlert } from "../../api/alerts";
+import { useAuth } from "../../context/AuthContext";
+import { useAlerts, useResolveAlert } from "../../queries/alerts";
 
 const SERIF = "font-['Playfair_Display',Georgia,'Times_New_Roman',serif]";
 
@@ -18,35 +18,20 @@ const fmtDate = (d) =>
   });
 
 export default function AlertAIUsage() {
-  const [alerts, setAlerts] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await getAlerts({ limit: 100 });
-        if (res.data.success) {
-          const aiAlerts = res.data.data.filter(
-            (a) =>
-              a.type?.includes("ai") ||
-              a.type?.includes("quota") ||
-              a.metadata?.provider === "openai" ||
-              (a.metadata && typeof a.metadata === "object" && Object.keys(a.metadata).some((k) => k.toLowerCase().includes("ai")))
-          );
-          setAlerts(aiAlerts);
-        }
-      } catch (e) {
-        console.error(e);
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, []);
-
-  const resolve = async (id) => {
-    await resolveAlert(id);
-    setAlerts((prev) => prev.filter((a) => a._id !== id));
-  };
+  const { user } = useAuth();
+  const alertsQuery = useAlerts(user?.id, { limit: 100 });
+  const resolveAlertMutation = useResolveAlert(user?.id);
+  const alerts = (alertsQuery.data?.data || []).filter(
+    (alert) =>
+      alert.type?.includes("ai") ||
+      alert.type?.includes("quota") ||
+      alert.metadata?.provider === "openai" ||
+      (alert.metadata &&
+        typeof alert.metadata === "object" &&
+        Object.keys(alert.metadata).some((key) => key.toLowerCase().includes("ai")))
+  );
+  const loading = alertsQuery.isPending;
+  const resolve = (id) => resolveAlertMutation.mutateAsync(id);
 
   if (loading) {
     return (

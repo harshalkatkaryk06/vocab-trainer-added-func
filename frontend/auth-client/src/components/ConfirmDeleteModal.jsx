@@ -3,16 +3,20 @@ export default function ConfirmDeleteModal({
   title = "Delete Item",
   message = "Are you sure you want to delete this item?",
   onCancel,
+  onClose,
   onConfirm,
   loading = false,
 }) {
   if (!isOpen) return null;
+  const close = onCancel || onClose;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-      <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#0f0f18] p-6 shadow-2xl">
+    <div className="vt-modal-backdrop" onMouseDown={(event) => {
+      if (event.target === event.currentTarget && !loading) close?.();
+    }}>
+      <div className="vt-modal" role="dialog" aria-modal="true" aria-labelledby="delete-modal-title">
         <h2 className="text-xl font-semibold text-white">
-          {title}
+          <span id="delete-modal-title">{title}</span>
         </h2>
 
         <p className="mt-3 text-sm leading-relaxed text-[#9a9aae]">
@@ -21,7 +25,7 @@ export default function ConfirmDeleteModal({
 
         <div className="mt-6 flex justify-end gap-3">
           <button
-            onClick={onCancel}
+            onClick={close}
             disabled={loading}
             className="rounded-lg border border-white/10 px-4 py-2 text-sm text-[#9a9aae] transition hover:bg-white/5"
           >

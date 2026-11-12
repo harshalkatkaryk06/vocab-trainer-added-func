@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { getAlerts, getAlertStats, resolveAlert } from "../../api/alerts";
+import { useAuth } from "../../context/AuthContext";
+import { useAlertStats, useAlerts, useResolveAlert } from "../../queries/alerts";
 
 const SERIF = "font-['Playfair_Display',Georgia,'Times_New_Roman',serif]";
 
@@ -18,31 +18,14 @@ const fmtDate = (d) =>
   });
 
 export default function AlertSecurity() {
-  const [alerts, setAlerts] = useState([]);
-  const [stats, setStats] = useState(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const [aRes, sRes] = await Promise.all([
-          getAlerts({ category: "security", limit: 50 }),
-          getAlertStats(),
-        ]);
-        if (aRes.data.success) setAlerts(aRes.data.data);
-        if (sRes.data.success) setStats(sRes.data.data);
-      } catch (e) {
-        console.error(e);
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, []);
-
-  const resolve = async (id) => {
-    await resolveAlert(id);
-    setAlerts((prev) => prev.map((a) => (a._id === id ? { ...a, resolved: true } : a)));
-  };
+  const { user } = useAuth();
+  const alertsQuery = useAlerts(user?.id, { category: "security", limit: 50 });
+  const statsQuery = useAlertStats(user?.id);
+  const resolveAlertMutation = useResolveAlert(user?.id);
+  const alerts = alertsQuery.data?.data || [];
+  const stats = statsQuery.data?.data || null;
+  const loading = alertsQuery.isPending || statsQuery.isPending;
+  const resolve = (id) => resolveAlertMutation.mutateAsync(id);
 
   if (loading) {
     return (

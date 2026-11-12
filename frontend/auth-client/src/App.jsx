@@ -32,6 +32,8 @@ import AdminPlans from "./pages/admin/AdminPlans";
 import AdminCreatePlan from "./pages/admin/AdminCreatePlan";
 import AdminSubscriptions from "./pages/admin/AdminSubscriptions";
 import AdminSystemHealth from "./pages/admin/AdminSystemHealth";
+import { ThemeProvider } from "./context/ThemeContext";
+import ThemeToggle from "./components/ThemeToggle";
 
 
 // Authenticated shell: persistent navbar + routed pages via <Outlet/>.
@@ -62,13 +64,10 @@ function Inner() {
 
   if (loading)
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#08080f]">
-        <div className="text-center">
-          <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-[10px] bg-[#7c6cff]">
-            <span className="font-['Georgia',serif] text-xl font-bold text-white">V</span>
-          </div>
-          <p className="text-sm text-[#9a9aae]">Loading…</p>
-        </div>
+      <div className="vt-boot-screen" role="status" aria-live="polite">
+        <div className="vt-boot-mark" aria-hidden="true">V</div>
+        <p>Preparing your workspace…</p>
+        <span className="vt-boot-progress" />
       </div>
     );
 
@@ -137,8 +136,11 @@ function Inner() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <Inner />
-    </AuthProvider>
+    <ThemeProvider>
+      <ThemeToggle />
+      <AuthProvider>
+        <Inner />
+      </AuthProvider>
+    </ThemeProvider>
   );
 }

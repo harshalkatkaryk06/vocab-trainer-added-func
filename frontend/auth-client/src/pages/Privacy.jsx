@@ -14,15 +14,17 @@ function Section({ title, children }) {
 
 export default function Privacy() {
   return (
-    <div className="min-h-screen bg-[#08080f] text-[#ededf2] [background-image:radial-gradient(900px_500px_at_50%_-8%,rgba(124,108,255,0.16),transparent_60%)]">
+    <div className="min-h-screen bg-[#08080f] text-[#ededf2]">
       {/* Header */}
-      <header className="flex h-16 items-center justify-between border-b-[0.5px] border-white/[0.07] px-7">
+      <header className="vt-legal-header flex h-16 items-center justify-between border-b-[0.5px] border-white/[0.07] px-7">
         <Link to="/" className="no-underline">
           <span className={`${SERIF} text-xl font-bold tracking-[0.01em] text-[#b6abff]`}>VocabTrainer</span>
         </Link>
-        <Link to="/" className="text-[13.5px] text-[#9a9aae] no-underline transition-colors hover:text-[#b6abff]">
-          ← Back to app
-        </Link>
+        <div className="flex items-center gap-4">
+          <Link to="/" className="text-[13.5px] text-[#9a9aae] no-underline transition-colors hover:text-[#b6abff]">
+            ← Back to app
+          </Link>
+        </div>
       </header>
 
       <main className="mx-auto max-w-[760px] px-6 py-12">

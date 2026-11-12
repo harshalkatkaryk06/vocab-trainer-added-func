@@ -1,9 +1,15 @@
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useAuth } from "../../context/AuthContext";
 import {
   approveCancellationRequest,
-  getAdminCancellationRequests,
   rejectCancellationRequest,
 } from "../../api/subscriptions";
+import {
+  subscriptionQueryKeys,
+  useAdminCancellationRequests,
+} from "../../queries/subscriptions";
+import { adminQueryKeys } from "../../queries/admin";
 
 const SERIF = "font-['Playfair_Display',Georgia,'Times_New_Roman',serif]";
 const PAGE_SIZE = 25;
@@ -48,46 +54,27 @@ const fmtMoney = (paise, currency = "INR") =>
 const displayStatus = (status = "") => status.replace(/_/g, " ");
 
 export default function CancellationRequests() {
-  const [requests, setRequests] = useState([]);
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
   const [statusFilter, setStatusFilter] = useState("pending_review");
   const [page, setPage] = useState(1);
-  const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
   const [actionError, setActionError] = useState("");
   const [activeRequest, setActiveRequest] = useState(null);
   const [decision, setDecision] = useState("");
   const [reviewerNote, setReviewerNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  const loadRequests = useCallback(async () => {
-    setLoading(true);
-    setError("");
-    try {
-      const response = await getAdminCancellationRequests({
-        page,
-        limit: PAGE_SIZE,
-        ...(statusFilter ? { status: statusFilter } : {}),
-      });
-      if (!response.data.success) {
-        throw new Error(response.data.message || "Could not load cancellation requests.");
-      }
-      setRequests(response.data.data);
-      setTotal(response.data.total);
-    } catch (loadError) {
-      setError(
-        loadError.response?.data?.message ||
-          loadError.message ||
-          "Could not load cancellation requests."
-      );
-    } finally {
-      setLoading(false);
-    }
-  }, [page, statusFilter]);
-
-  useEffect(() => {
-    Promise.resolve().then(loadRequests);
-  }, [loadRequests]);
+  const requestParams = {
+    page,
+    limit: PAGE_SIZE,
+    ...(statusFilter ? { status: statusFilter } : {}),
+  };
+  const requestsQuery = useAdminCancellationRequests(user?.id, requestParams);
+  const requests = requestsQuery.data?.data || [];
+  const total = requestsQuery.data?.total || 0;
+  const loading = requestsQuery.isPending;
+  const error = requestsQuery.error?.response?.data?.message ||
+    requestsQuery.error?.message || "";
 
   const openDecision = (request, action) => {
     setActiveRequest(request);
@@ -120,7 +107,20 @@ export default function CancellationRequests() {
       setActiveRequest(null);
       setDecision("");
       setReviewerNote("");
-      await loadRequests();
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: subscriptionQueryKeys.adminCancellationRequests(user?.id),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: adminQueryKeys.payments(user?.id),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: subscriptionQueryKeys.adminSubscriptions(user?.id),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: subscriptionQueryKeys.systemHealth(user?.id),
+        }),
+      ]);
     } catch (submitError) {
       setActionError(
         submitError.response?.data?.message ||
@@ -174,7 +174,7 @@ export default function CancellationRequests() {
         >
           <span>{error}</span>
           <button
-            onClick={loadRequests}
+            onClick={() => requestsQuery.refetch()}
             className="rounded-lg border border-[#fb7185]/30 px-3 py-1.5 font-semibold hover:bg-[#fb7185]/10"
           >
             Retry

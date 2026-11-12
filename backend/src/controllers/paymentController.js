@@ -908,6 +908,7 @@ export const getPaymentHistory = asyncHandler(async (req, res) => {
  */
 export const getAllPayments = asyncHandler(async (req, res) => {
   const transactions = await Transaction.find({})
+    .populate("userId", "email")
     .sort({ createdAt: -1 })
     .lean();
 

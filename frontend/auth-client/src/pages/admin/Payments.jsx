@@ -1,6 +1,5 @@
-import { useState, useEffect } from "react";
 import { useAuth } from "../../context/AuthContext";
-import { getAllPayments, getCancellationRequests } from "../../api/subscriptions";
+import { useAdminPayments, usePaymentCancellationRequests } from "../../queries/admin";
 
 const SERIF = "font-['Playfair_Display',Georgia,'Times_New_Roman',serif]";
 
@@ -69,26 +68,15 @@ const fmtDate = (d) =>
 
 export default function AdminPayments() {
   const { user } = useAuth();
-  const [payments, setPayments] = useState([]);
-  const [cancellationRequests, setCancellationRequests] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const pRes = await getAllPayments();
-        if (pRes.data.success) setPayments(pRes.data.data);
-        if (user?.role === "super_admin") {
-          const cRes = await getCancellationRequests();
-          if (cRes.data.success) setCancellationRequests(cRes.data.data);
-        }
-      } catch (e) {
-        console.error(e);
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, [user?.role]);
+  const paymentsQuery = useAdminPayments(user?.id);
+  const cancellationRequestsQuery = usePaymentCancellationRequests(
+    user?.id,
+    user?.role === "super_admin"
+  );
+  const payments = paymentsQuery.data?.data || [];
+  const cancellationRequests = cancellationRequestsQuery.data?.data || [];
+  const loading = paymentsQuery.isPending ||
+    (user?.role === "super_admin" && cancellationRequestsQuery.isPending);
 
   // Build a lookup map: transactionId -> cancellation request
   const cancellationMap = new Map();
@@ -134,10 +122,20 @@ export default function AdminPayments() {
           <tbody className="divide-y divide-white/[0.05]">
             {payments.map((p) => {
               const cr = cancellationMap.get(p._id.toString());
+              const paymentUser = p.userId;
+              const userId =
+                paymentUser?._id?.toString() || paymentUser?.toString?.() || "—";
               return (
                 <tr key={p._id} className="hover:bg-white/[0.02]">
                   <td className="px-6 py-4 text-[#9a9aae] text-[12px]">{fmtDate(p.createdAt)}</td>
-                  <td className="px-6 py-4">{p.userId}</td>
+                  <td className="px-6 py-4">
+                    <div className="break-all font-mono text-xs text-[#b6abff]">{userId}</div>
+                    {paymentUser?.email && (
+                      <div className="mt-1 break-all text-[11px] text-[#9a9aae]">
+                        {paymentUser.email}
+                      </div>
+                    )}
+                  </td>
                   <td className="px-6 py-4 text-[#9a9aae]">{p.planSnapshot?.displayName || "—"}</td>
                   <td className="px-6 py-4 text-[#9a9aae]">${(p.amount / 100).toFixed(2)} {p.currency}</td>
                   <td className="px-6 py-4 text-[#9a9aae]">

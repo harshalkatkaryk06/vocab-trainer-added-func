@@ -1,6 +1,9 @@
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { saveWord, updateWord, deleteWord, getSpecificWord } from "../api/words";
 import DeleteConfirmModal from "../components/ConfirmDeleteModal";
+import { useAuth } from "../context/AuthContext";
+import { libraryQueryKey } from "../queries/library";
 const SERIF = "font-['Playfair_Display',Georgia,'Times_New_Roman',serif]";
 const INPUT =
   "w-full rounded-[12px] border-[0.5px] border-white/[0.07] bg-white/[0.02] px-4 py-3 text-[15px] text-[#ededf2] outline-none transition-all placeholder:text-[#6a6a7c] focus:border-[rgba(124,108,255,0.55)] focus:ring-2 focus:ring-[rgba(124,108,255,0.12)]";
@@ -83,6 +86,8 @@ function WordFields({ form, set }) {
   );
 }
 export default function AdminWords() {
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [phase, setPhase] = useState("idle");
 const [jsonInput, setJsonInput] = useState("");
@@ -123,6 +128,7 @@ const [jsonInput, setJsonInput] = useState("");
         examples: toExamplesArray(form.examples),
       });
       if (res.data.success) {
+  queryClient.invalidateQueries({ queryKey: libraryQueryKey(user?.id) });
   flash("ok", `“${form.word.trim()}” saved.`);
 
   // Clear form for next word
@@ -200,6 +206,9 @@ for (const word of words) {
   );
 }
 else {
+  if (successCount > 0) {
+    queryClient.invalidateQueries({ queryKey: libraryQueryKey(user?.id) });
+  }
   let message = "";
 
   if (successCount > 0) {
@@ -273,7 +282,11 @@ else {
         pronunciationReadable: form.pronunciationReadable.trim(),
         examples: toExamplesArray(form.examples),
       });
-      if (res.data.success) { flash("ok", `“${form.word.trim()}” updated.`); backToMenu(); }
+      if (res.data.success) {
+        queryClient.invalidateQueries({ queryKey: libraryQueryKey(user?.id) });
+        flash("ok", `“${form.word.trim()}” updated.`);
+        backToMenu();
+      }
       else flash("err", res.data.message || "Could not update.");
     } catch (err) {
       flash("err", err?.response?.data?.message || "Could not update.");
@@ -289,7 +302,11 @@ else {
       const found = await getSpecificWord(findWord.trim());
       if (!found.data.success) { flash("err", "Word not found."); setLoading(false); return; }
       const res = await deleteWord(found.data.data._id);
-      if (res.data.success) { flash("ok", `“${findWord.trim()}” deleted.`); backToMenu(); }
+      if (res.data.success) {
+        queryClient.invalidateQueries({ queryKey: libraryQueryKey(user?.id) });
+        flash("ok", `“${findWord.trim()}” deleted.`);
+        backToMenu();
+      }
       else flash("err", res.data.message || "Could not delete.");
     } catch (err) {
       flash("err", err?.response?.data?.message || "Could not delete.");

@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { getAuditLogs } from "../../api/admin";
+import { useAuth } from "../../context/AuthContext";
+import { useAuditLogs } from "../../queries/admin";
 
 const SERIF = "font-['Playfair_Display',Georgia,'Times_New_Roman',serif]";
 
@@ -10,21 +10,10 @@ const fmtDate = (d) =>
   });
 
 export default function AuditLogs() {
-  const [logs, setLogs] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await getAuditLogs({ page: 1, limit: 50 });
-        setLogs(res.data.data);
-      } catch (e) {
-        console.error(e);
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, []);
+  const { user } = useAuth();
+  const logsQuery = useAuditLogs(user?.id, { page: 1, limit: 50 });
+  const logs = logsQuery.data?.data || [];
+  const loading = logsQuery.isPending;
 
   if (loading) {
     return (
